@@ -1,17 +1,3 @@
-# Add these imports at the top
-import cachetools
-import hashlib
-from datetime import datetime, timedelta
-
-# Add cache setup (after imports)
-flight_cache = cachetools.TTLCache(maxsize=100, ttl=900)  # 15 minute cache
-bus_cache = cachetools.TTLCache(maxsize=50, ttl=1800)  # 30 minute cache
-
-def get_cache_key(service: str, **kwargs):
-    """Generate cache key from parameters"""
-    key_string = f"{service}:{':'.join(f'{k}={v}' for k, v in sorted(kwargs.items()))}"
-    return hashlib.md5(key_string.encode()).hexdigest()
-    
 import os
 import logging
 import json
@@ -309,7 +295,7 @@ async def departure_date_handler(update: Update, context: ContextTypes.DEFAULT_T
     date_str = update.message.text
     
     try:
-        # Simple date parsing (in real app, use dateutil)
+        # Simple date parsing
         if date_str.lower() in ["tomorrow", "tmrw"]:
             from datetime import timedelta
             dep_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -383,121 +369,69 @@ async def return_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return RETURN_DATE
 
 async def show_flight_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show flight search results with REAL API"""
+    """Show flight search results"""
     user_id = update.effective_user.id
     session = user_sessions[user_id]
     
     # Show searching message
     if update.message:
-        msg = await update.message.reply_text("🔍 Searching REAL flights via TravelPayouts...")
+        msg = await update.message.reply_text("🔍 Searching for flights...")
     else:
         query = update.callback_query
         await query.answer()
-        await query.edit_message_text("🔍 Searching REAL flights via TravelPayouts...")
+        await query.edit_message_text("🔍 Searching for flights...")
     
     try:
-        # Generate cache key
-        cache_key = get_cache_key(
-            service="flights",
+        # Get flights from API
+        flights = await TravelPayoutsClient.search_flights(
             origin=session["departure"]["code"],
             destination=session["destination"]["code"],
             departure_date=session["departure_date"],
-            return_date=session.get("return_date", ""),
-            currency="USD"
+            return_date=session.get("return_date"),
+            currency="USD",
+            limit=10
         )
         
-        # Check cache first
-        if cache_key in flight_cache:
-            print("✅ Using cached flight results")
-            flights = flight_cache[cache_key]
-        else:
-            # Get REAL flights from TravelPayouts API
-            flights = await TravelPayoutsClient.search_flights(
-                origin=session["departure"]["code"],
-                destination=session["destination"]["code"],
-                departure_date=session["departure_date"],
-                return_date=session.get("return_date"),
-                currency="USD",  # Or detect user currency
-                limit=20  # Get more for "Load More" feature
-            )
-            
-            # Cache the results
-            flight_cache[cache_key] = flights
-        
         if not flights:
-            error_msg = (
-                "❌ No flights found for your search.\n\n"
-                "**Try:**\n"
-                "• Different dates\n"
-                "• Nearby airports\n"
-                "• Flexible travel dates\n\n"
-                "Or contact support if this persists."
-            )
+            error_msg = "❌ No flights found. Try different dates or routes."
             keyboard = [[InlineKeyboardButton("🔄 New Search", callback_data="service_flights")]]
         else:
             # Format results
             session["search_results"] = flights
             session["results_offset"] = 0
             
-            # Show first 3 cheapest flights
+            # Show first 3 results
             results_text = format_flight_results(flights[:3], 1)
-            
-            # Add stats
-            stats_text = (
-                f"\n📊 **Stats:** {len(flights)} flights found | "
-                f"Cheapest: {flights[0].get('currency', 'USD')} {flights[0].get('value', 0)} | "
-                f"Avg: {flights[0].get('currency', 'USD')} {sum(f.get('value', 0) for f in flights[:5])//5}"
-            )
-            
-            error_msg = results_text + stats_text
-            
-            # Create keyboard with load more
+            error_msg = results_text
             keyboard = []
             
             if len(flights) > 3:
-                keyboard.append([
-                    InlineKeyboardButton("📥 Load 3 More", callback_data=f"load_more:flights:3"),
-                    InlineKeyboardButton("💵 Sort by Price", callback_data="sort_price")
-                ])
+                keyboard.append([InlineKeyboardButton("📥 Load 3 More", callback_data="load_more_flights:3")])
             
             keyboard.extend([
-                [
-                    InlineKeyboardButton("🔍 New Search", callback_data="service_flights"),
-                    InlineKeyboardButton("⭐ Save Search", callback_data="save_search")
-                ],
-                [
-                    InlineKeyboardButton("📧 Price Alert", callback_data="price_alert"),
-                    InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")
-                ]
+                [InlineKeyboardButton("🔍 New Search", callback_data="service_flights"),
+                 InlineKeyboardButton("💳 Book Now", callback_data="show_booking")],
+                [InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")]
             ])
         
-        # Send message
-        target = msg if update.message else query
-        await target.edit_text(
-            error_msg, 
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard) if 'keyboard' in locals() else None,
-            disable_web_page_preview=True
-        )
+        if update.message:
+            await msg.edit_text(error_msg, parse_mode=ParseMode.MARKDOWN, 
+                              reply_markup=InlineKeyboardMarkup(keyboard) if 'keyboard' in locals() else None,
+                              disable_web_page_preview=True)
+        else:
+            await query.edit_message_text(error_msg, parse_mode=ParseMode.MARKDOWN,
+                                        reply_markup=InlineKeyboardMarkup(keyboard) if 'keyboard' in locals() else None,
+                                        disable_web_page_preview=True)
         
         return ConversationHandler.END
         
     except Exception as e:
         logger.error(f"Flight search error: {e}")
-        
-        error_msg = (
-            "⚠️ **Temporary Issue**\n\n"
-            "We're experiencing high demand. Please:\n"
-            "1. Try again in 30 seconds\n"
-            "2. Use /start to begin new search\n"
-            "3. Contact support if issue persists"
-        )
-        
+        error_msg = "⚠️ Error searching flights. Please try again."
         if update.message:
             await msg.edit_text(error_msg)
         else:
             await query.edit_message_text(error_msg)
-        
         return ConversationHandler.END
 
 def format_flight_results(flights, start_num):
@@ -529,46 +463,6 @@ def format_flight_results(flights, start_num):
         text += f"   [📱 Book Now]({flight.get('affiliate_url', '#')})\n\n"
     
     return text
-
-# Bus handlers (similar structure)
-async def bus_departure_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle bus departure city"""
-    user_id = update.effective_user.id
-    
-    if update.callback_query:
-        query = update.callback_query
-        await query.answer()
-        if query.data == "back_main":
-            return await start_callback(update, context)
-    
-    city_query = update.message.text
-    cities = CityDatabase.search_cities(city_query)
-    
-    if not cities:
-        await update.message.reply_text(
-            "City not found. Try: Cape Town, Johannesburg, Durban, Pretoria",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Back", callback_data="service_buses")]
-            ])
-        )
-        return BUS_DEPARTURE
-    
-    # Show city options
-    keyboard = []
-    for city in cities[:3]:
-        if city.get("bus_terminals"):
-            for terminal in city["bus_terminals"][:2]:
-                btn_text = f"🚌 {terminal}"
-                callback_data = f"bus_depart:{city['name']}:{terminal}"
-                keyboard.append([InlineKeyboardButton(btn_text, callback_data=callback_data)])
-    
-    keyboard.append([InlineKeyboardButton("🔍 Search Again", callback_data="search_bus_again")])
-    
-    await update.message.reply_text(
-        "Select departure terminal:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-    return BUS_DEPARTURE
 
 async def start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Restart conversation from callback"""
@@ -639,59 +533,6 @@ def main():
     app.add_handler(flight_conv)
     app.add_handler(CallbackQueryHandler(start_callback, pattern="^back_main$"))
     
-    async def load_more_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle Load More button clicks"""
-    query = update.callback_query
-    await query.answer()
-    
-    data = query.data.split(":")
-    service_type = data[1]  # "flights" or "buses"
-    current_offset = int(data[2])
-    
-    user_id = update.effective_user.id
-    session = user_sessions.get(user_id, {})
-    
-    if service_type == "flights" and "search_results" in session:
-        flights = session["search_results"]
-        new_offset = current_offset + 3
-        
-        if new_offset >= len(flights):
-            await query.answer("No more flights to show", show_alert=True)
-            return
-        
-        # Show next 3 flights
-        next_flights = flights[new_offset:new_offset + 3]
-        results_text = format_flight_results(next_flights, new_offset + 1)
-        
-        # Update keyboard
-        keyboard = []
-        has_more = len(flights) > new_offset + 3
-        
-        if has_more:
-            keyboard.append([
-                InlineKeyboardButton("📥 Load 3 More", callback_data=f"load_more:flights:{new_offset}"),
-                InlineKeyboardButton("🔼 Back to Top", callback_data="show_first_results")
-            ])
-        else:
-            keyboard.append([
-                InlineKeyboardButton("🔼 Back to Top", callback_data="show_first_results")
-            ])
-        
-        keyboard.extend([
-            [
-                InlineKeyboardButton("🔍 New Search", callback_data="service_flights"),
-                InlineKeyboardButton("💳 Book Now", callback_data="show_booking")
-            ],
-            [InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")]
-        ])
-        
-        await query.edit_message_text(
-            results_text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            disable_web_page_preview=True
-        )
-        
     # Add help command
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
