@@ -1,3 +1,17 @@
+# Add these imports at the top
+import cachetools
+import hashlib
+from datetime import datetime, timedelta
+
+# Add cache setup (after imports)
+flight_cache = cachetools.TTLCache(maxsize=100, ttl=900)  # 15 minute cache
+bus_cache = cachetools.TTLCache(maxsize=50, ttl=1800)  # 30 minute cache
+
+def get_cache_key(service: str, **kwargs):
+    """Generate cache key from parameters"""
+    key_string = f"{service}:{':'.join(f'{k}={v}' for k, v in sorted(kwargs.items()))}"
+    return hashlib.md5(key_string.encode()).hexdigest()
+    
 import os
 import logging
 import json
