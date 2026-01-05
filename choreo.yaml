@@ -6,16 +6,30 @@ build:
 
 deploy:
   replicas: 1
-  minReplicas: 0  # Scales to zero when idle
+  minReplicas: 0
   maxReplicas: 2
-  
+  cpu: 0.5
+  memory: 512Mi
+
 environmentVariables:
   - name: TELEGRAM_BOT_TOKEN
-    value: ""  # Will set in Choreo console
-    
+    value: ""
+    required: true
+  - name: TRAVELPAYOUTS_API_TOKEN
+    value: ""
+  - name: PORT
+    value: "8080"
+
 healthCheck:
-  http:
-    path: /health
-    port: 8080
+  liveness:
+    http:
+      path: /health
+      port: 8080
     initialDelaySeconds: 30
     periodSeconds: 10
+
+network:
+  ingress:
+    - port: 8080
+      context: /
+      expose: true
