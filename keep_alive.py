@@ -1,24 +1,23 @@
-import requests
-import threading
-import time
+from flask import Flask
+from threading import Thread
 import os
 
-def keep_choreo_awake():
-    """Ping Choreo service to prevent scaling to zero"""
-    service_url = os.environ.get('CHOREO_SERVICE_URL', '')
-    if not service_url:
-        return
-    
-    while True:
-        try:
-            # Ping every 4 minutes
-            time.sleep(240)
-            response = requests.get(f"{service_url}/health", timeout=5)
-            if response.status_code == 200:
-                print("✅ Pinged Choreo to stay awake")
-        except:
-            print("⚠️ Keep-alive ping failed")
-            time.sleep(60)
+app = Flask(__name__)
 
-# Start in main()
-# threading.Thread(target=keep_choreo_awake, daemon=True).start()
+@app.route('/')
+def home():
+    return "✅ Bot is running on Choreo - Port 8080"
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
+def run():
+    # CHOREO REQUIRES PORT 8080
+    port = 8080  # Fixed port for Choreo
+    print(f"🌐 Health endpoint: http://0.0.0.0:{port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
+
+def keep_alive():
+    t = Thread(target=run, daemon=True)
+    t.start()
