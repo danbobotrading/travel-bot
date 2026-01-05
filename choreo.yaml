@@ -1,0 +1,21 @@
+version: 1.0
+
+build:
+  context: .
+  dockerfile: Dockerfile
+
+deploy:
+  replicas: 1
+  minReplicas: 0  # Scales to zero when idle
+  maxReplicas: 2
+  
+environmentVariables:
+  - name: TELEGRAM_BOT_TOKEN
+    value: ""  # Will set in Choreo console
+    
+healthCheck:
+  http:
+    path: /health
+    port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 10
