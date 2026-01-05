@@ -17,6 +17,14 @@ environmentVariables:
     required: true
   - name: TRAVELPAYOUTS_API_TOKEN
     value: ""
+  - name: TRAVELPAYOUTS_AFFILIATE_ID
+    value: "284678"  # Default fallback
+  - name: INTERCAPE_AFFILIATE_ID
+    value: "YOUR_INTERCAPE_AFFILIATE"
+  - name: GREYHOUND_AFFILIATE_ID
+    value: "YOUR_GREYHOUND_AFFILIATE"
+  - name: TRANSLUX_AFFILIATE_ID
+    value: "YOUR_TRANSLUX_AFFILIATE"
   - name: PORT
     value: "8080"
 
