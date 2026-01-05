@@ -627,17 +627,23 @@ def main():
     print("🔐 SECURE TRAVEL BOT STARTING")
     print("=" * 60)
     
-    # Display configuration status
-    print("🔧 CONFIGURATION CHECK:")
-    print(f"  • TELEGRAM_BOT_TOKEN: {'✅' if TELEGRAM_BOT_TOKEN else '❌'}")
-    print(f"  • TRAVELPAYOUTS_API_TOKEN: {'✅' if TRAVELPAYOUTS_API_TOKEN else '⚠️ Optional'}")
-    print(f"  • TRAVELPAYOUTS_AFFILIATE_ID: {'✅ Custom' if TRAVELPAYOUTS_AFFILIATE_ID != '284678' else '⚠️ Default'}")
-    print(f"  • Bus affiliates: {'✅ Configured' if all([
-        INTERCAPE_AFFILIATE_ID != 'YOUR_INTERCAPE_AFFILIATE',
-        GREYHOUND_AFFILIATE_ID != 'YOUR_GREYHOUND_AFFILIATE',
-        TRANSLUX_AFFILIATE_ID != 'YOUR_TRANSLUX_AFFILIATE'
-    ]) else '⚠️ Using placeholders'}")
-    print("=" * 60)
+    # LINES 630-640 - CORRECTED VERSION
+async def flight_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle departure date input"""
+    date_str = update.message.text
+    formatted_date = parse_date(date_str)
+    
+    if not formatted_date:
+        await update.message.reply_text(
+            "Invalid date format. Please try:\n"
+            "• 20 Jan\n• 2024-01-20\n• tomorrow\n• next Friday",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Back", callback_data="search_again:flight")]
+            ])
+        )
+        return FLIGHT_DATE
+    
+    context.user_data["departure_date"] = formatted_date
     
     if not TELEGRAM_BOT_TOKEN:
         print("❌ FATAL: TELEGRAM_BOT_TOKEN not set!")
